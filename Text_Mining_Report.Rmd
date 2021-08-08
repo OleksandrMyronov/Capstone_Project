@@ -1,0 +1,314 @@
+---
+title: "Text Mining Exploratory Analysis"
+author: "Oleksandr Myronov"
+date: "08 08 2021"
+output: html_document
+---
+
+This is milestone report for Data Science Capstone Project - Natural Language Processing.
+Rmd file for this report can be found on https://github.com/OleksandrMyronov/Capstone_Project
+
+## Basic data features
+
+In this section we are loading text files and exploring their main attributes. We would use **tidytext** R package for data cleaning. First, we look at some data summary for dataset files 
+
+```{r, cache=T, message=F, warning=F, echo=F, results='hide'}
+library(dplyr)
+library(tidytext)
+
+blogfile<-readLines("en_US/en_US.blogs.txt", encoding = 'UTF-8')
+newsfile<-readLines("en_US/en_US.news.txt", encoding = 'UTF-8')
+twitfile<-readLines("en_US/en_US.twitter.txt", encoding = 'UTF-8')
+
+Size<-c(object.size(blogfile), object.size(newsfile), object.size(twitfile)) 
+Lines<-c(length(blogfile), length(newsfile), length(twitfile))
+Name<-c("Blogs", "News", "Twitter")
+
+```
+
+```{r, cache=T, message=F, warning=F, echo=F, results='hide'}
+totalWords<-c(0,0,0)
+tibble(blogfile) %>%
+unnest_tokens(word, blogfile)  %>%
+mutate(word=gsub(pattern="[^a-z']", x=word, replacement="")) -> blogTotal
+blogTotal %>%
+count(word, sort=T) -> blogWords
+totalWords[1]<-dim(blogTotal)[1]
+rm(blogfile)
+rm(blogTotal)
+
+tibble(newsfile) %>%
+unnest_tokens(word, newsfile)  %>%
+mutate(word=gsub(pattern="[^a-z']", x=word, replacement="")) -> newsTotal
+newsTotal %>%
+count(word, sort=T) -> newsWords
+totalWords[2]<-dim(newsTotal)[1]
+rm(newsfile)
+rm(newsTotal)
+
+tibble(twitfile) %>%
+unnest_tokens(word, twitfile)  %>%
+mutate(word=gsub(pattern="[^a-z']", x=word, replacement="")) -> twitTotal
+twitTotal %>%
+count(word, sort=T) -> twitWords
+totalWords[3]<-dim(twitTotal)[1]
+rm(twitTotal)
+rm(twitfile)
+
+```
+
+```{r, cache=T, message=F, warning=F, echo=F}
+uniqueWords<-c(dim(blogWords)[1], dim(newsWords)[1], dim(twitWords)[1])
+data.frame(Name, Size, Lines, totalWords, uniqueWords) %>%
+  mutate(uniqueRatio=uniqueWords/totalWords)->filesSummary
+filesSummary
+```
+
+We can see, that files are quite big for small App, and also it may take a lot of time for processing.
+It's possible to process all the data just once and create summary word frequency matrix, but for larger datasets it would be reasonable to reduce initial dataset dimension by random sampling, so smaller dataset would represent whole population of the words. We can see ratio of unique words per raw text words is ~1% for twitter and blogs datasets, and ~3% for news. Maybe, news provide more brief information, with names, surnames and places, which are unique words.    
+Next, we are tokenizing text, with **tidytext** package. Also we want to remove all numbers, hieroglyphs and non-latin symbols from text, except ['].  
+
+Let's look at head and tail of pre-cleaned unique word lists:
+```{r, cache=T, message=F, warning=F, echo=F}
+print("Head and tail for blogs unique words dataset")
+head(blogWords,10)
+tail(blogWords,10)
+```
+
+```{r, cache=T, message=F, warning=F, echo=F}
+print("Head and tail for news unique words dataset")
+head(newsWords,10)
+tail(newsWords,10)
+```
+
+```{r, cache=T, message=F, warning=F, echo=F}
+print("Head and tail for twitter unique words dataset")
+head(twitWords,10)
+tail(twitWords,10)
+```
+
+We can see, that most common words are articles and prepositions, which are in tidytext  **stop_words** list (plus empty "" symbol for cleaned out numbers, non-latin letters and hieroglyphs which are deleted). Lists order differs between datasets, but top-20 words are quite similar. Later, we should decide if it is possible to build one prediction algorithm for all three cases, or it would not be smart enough and it's better to distinguish news, blogs and twitter by different algorithms.  
+  
+In the tail we can see some non-words, misspellings and very rare words, which is no reason to store in memory. There are no misspellings in news, but they look like names and surnames or just rare words. 
+
+## Data cleaning
+
+Let's do some basic filtering for head and tail. We use **stop_words** list from **tidytext** R package to remove some common, but not very meaningful top words. And for tail we remove all the words with count less than two. And also we remove empty non-words "" count.
+
+```{r, cache=T, message=F, warning=F, echo=F}
+print("Head and tail for pre-cleaned blogs unique words dataset")
+filter(blogWords, word!="") %>%
+anti_join(stop_words) %>%
+filter(n>1) -> blogWords
+head(blogWords, 10)
+tail(blogWords, 10)
+```
+
+```{r, cache=T, message=F, warning=F, echo=F}
+print("Head and tail for pre-cleaned news unique words dataset")
+filter(newsWords, word!="") %>%
+anti_join(stop_words) %>%
+filter(n>1) -> newsWords
+head(newsWords, 10)
+tail(newsWords, 10)
+```
+
+```{r, cache=T, message=F, warning=F, echo=F}
+print("Head and tail for pre-cleaned twitter unique words dataset")
+filter(twitWords, word!="") %>%
+anti_join(stop_words) %>%
+filter(n>1) -> twitWords
+head(twitWords, 10)
+tail(twitWords, 10)
+```
+
+We can see, that most common words for datasets are essentially different.
+And also removing single words is reasonable for basic cleaning.
+Lets look at new unique words summary in compare to non-cleaned dataset.
+
+```{r, cache=T, message=F, warning=F, echo=F}
+clean1Words<-c(dim(blogWords)[1], dim(newsWords)[1], dim(twitWords)[1])
+filesSummary<-mutate(filesSummary, clean1Words)
+filesSummary
+```
+
+We have near two times reduction in dataset lengths just for basic cleaning, and it may be useful to explore
+results of removing all words with higher counts. First, we look at word counts distribution histogram on logarythmic scale:
+
+```{r, cache=T, message=F, warning=F, echo=F}
+hist(log10(blogWords$n), breaks=200)
+hist(log10(newsWords$n), breaks=200)
+hist(log10(twitWords$n), breaks=200)
+```
+
+Histograms are non-informative, we can see just high peak for number of words with low frequency and long tail for few frequently-used words. Zipf’s law states that the frequency that a word appears is inversely proportional to its rank. Let's look at logarythmic plot for word frequency by list rank:  
+
+
+```{r, cache=T, message=F, warning=F, echo=F}
+library(ggplot2)
+mutate(blogWords, rank=as.numeric(rownames(blogWords)), Dataset="Blogs") %>%
+rbind(mutate(newsWords, rank=as.numeric(rownames(newsWords)), Dataset="News")) %>%
+rbind(mutate(twitWords, rank=as.numeric(rownames(twitWords)), Dataset="Twitter")) %>%     
+
+ggplot(aes(rank, n, color=Dataset)) + 
+geom_line(size = 1.1, alpha = 0.8, show.legend = TRUE) + 
+scale_x_log10() +
+scale_y_log10() +
+theme_bw()
+
+```
+
+
+So Zipf's law works on this datasets, blogs and twitter have very close distribution, and news differs. In general, there is small number of commonly used words with large n, and enormous number of rare words. So we can essentially reduce word database with minimum information loss.  
+Next, we should determine, how many words we need for modeling reasonably large part of language, except 1149 words from **stop_words** list (but they should be included in final model and prediction algorithm). 
+We can calculate minimum frequency (as a number of words or as a ratio) for each quantile of language covering.
+Let's look at table for minimum number of words for our three datasets, which cover percentage of total word population:
+
+```{r, cache=T, message=F, warning=F, echo=F}
+
+wordNumber1<-sum(blogWords$n)                       # total number of words after filtering
+blogWords<-mutate(blogWords, 
+                  langRatio=n/wordNumber1,           # calculating word frequency
+                  langCover=cumsum(n)/wordNumber1)  # calculating cumulative ratio of language covering
+
+
+wordNumber2<-sum(newsWords$n)                       # total number of words after filtering
+newsWords<-mutate(newsWords, 
+                  langRatio=n/wordNumber2,           # calculating word frequency
+                  langCover=cumsum(n)/wordNumber2)  # calculating cumulative ratio of language covering
+
+
+wordNumber3<-sum(twitWords$n)                       # total number of words after filtering
+twitWords<-mutate(twitWords, 
+                  langRatio=n/wordNumber3,           # calculating word frequency
+                  langCover=cumsum(n)/wordNumber3)  # calculating cumulative ratio of language covering
+
+```
+
+
+```{r, cache=T, message=F, warning=F, echo=F}
+perc50<-c(tail(filter(blogWords, langCover<=0.5), 1)$n, 
+           tail(filter(newsWords, langCover<=0.5), 1)$n,
+           tail(filter(twitWords, langCover<=0.5), 1)$n)
+
+perc80<-c(tail(filter(blogWords, langCover<=0.8), 1)$n, 
+           tail(filter(newsWords, langCover<=0.8), 1)$n,
+           tail(filter(twitWords, langCover<=0.8), 1)$n)
+
+perc90<-c(tail(filter(blogWords, langCover<=0.9), 1)$n, 
+           tail(filter(newsWords, langCover<=0.9), 1)$n,
+           tail(filter(twitWords, langCover<=0.9), 1)$n)
+
+
+perc95<-c(tail(filter(blogWords, langCover<=0.95), 1)$n, 
+           tail(filter(newsWords, langCover<=0.95), 1)$n,
+           tail(filter(twitWords, langCover<=0.95), 1)$n)
+
+perc98<-c(tail(filter(blogWords, langCover<=0.98), 1)$n, 
+           tail(filter(newsWords, langCover<=0.98), 1)$n,
+           tail(filter(twitWords, langCover<=0.98), 1)$n)
+
+perc99<-c(tail(filter(blogWords, langCover<=0.99), 1)$n, 
+           tail(filter(newsWords, langCover<=0.99), 1)$n,
+           tail(filter(twitWords, langCover<=0.99), 1)$n)
+
+data.frame(Name, perc50, perc80, perc90, perc95, perc98, perc99)
+```
+
+For this assignment we select 95% word covering, let's add dimensions of datasets to our summary table 
+
+```{r, cache=T, message=F, warning=F, echo=F}
+blogWords<-filter(blogWords, n>=7)
+newsWords<-filter(newsWords, n>=3)
+twitWords<-filter(twitWords, n>=6)
+filesSummary<-mutate(filesSummary, Words095=c(dim(blogWords)[1], dim(newsWords)[1], dim(twitWords)[1]), clean1Words=NULL)
+filesSummary
+```
+
+We can see, that after cleaning, data dimensions reduced near four times. We have near 60000 words vocabulary for blogs and twitter and near 30000 for news. Difference is quite essential, so later we should decide, if we need to merge words from three datasets into single base (maybe, with some proportions of sampling), or use them separately.
+
+## Exploring n-grams
+
+Now, let's look at some basic statistics for bigrams of non-cleaned datasets
+
+```{r, cache=T, message=F, warning=F, echo=F}
+library(ggraph)
+library(igraph)
+library(widyr)
+```
+
+
+```{r, cache=T, message=F, warning=F, echo=F}
+print("Head and tail of blogs bigram dataset")
+blogfile<-readLines("en_US/en_US.blogs.txt", encoding = 'UTF-8')
+
+tibble(blogfile) %>%
+  unnest_tokens(bigram, blogfile, token='ngrams', n=2)  %>% 
+  count(bigram, sort=T) -> blogsBigram
+head(blogsBigram,10)
+tail(blogsBigram,10)
+```
+
+```{r, cache=T, message=F, warning=F, echo=F}
+print("Head and tail of news bigram dataset")
+newsfile<-readLines("en_US/en_US.news.txt", encoding = 'UTF-8')
+
+tibble(newsfile) %>%
+  unnest_tokens(bigram, newsfile, token='ngrams', n=2)  %>% 
+  count(bigram, sort=T) -> newsBigram
+head(newsBigram,10)
+tail(newsBigram,10)
+```
+
+```{r, cache=T, message=F, warning=F, echo=F}
+print("Head and tail of twitter bigram dataset")
+twitfile<-readLines("en_US/en_US.twitter.txt", encoding = 'UTF-8')
+
+tibble(twitfile) %>%
+  unnest_tokens(bigram, twitfile, token='ngrams', n=2)  %>% 
+  count(bigram, sort=T) -> twitBigram
+head(twitBigram,10)
+tail(twitBigram,10)
+```
+
+```{r, cache=T, message=F, warning=F, echo=F}
+
+#blogsBigram<-mutate(blogsBigram, id=as.numeric(rownames(blogsBigram)))
+#blogs_word_pairs<-blogsBigram %>% pairwise_count(bigram, id, sort = TRUE, upper = FALSE)
+```
+
+We can see the same problems with data cleaning as for single words - non-latin symbols, numbers and foreign words should be removed. Bigrams summary with removing just single word combinations:
+
+```{r, cache=T, message=F, warning=F, echo=F}
+Bigrams<-c(dim(blogsBigram)[1], dim(newsBigram)[1], dim(twitBigram)[1])
+
+BigramClean1<-c(0,0,0)
+BigramClean1[1]<-dim(filter(blogsBigram, n>1))[1]
+BigramClean1[2]<-dim(filter(newsBigram, n>1))[1]
+BigramClean1[3]<-dim(filter(twitBigram, n>1))[1]
+data.frame(Name, totalWords, uniqueWords, Bigrams, BigramClean1)
+```
+
+Number of bigrams much bigger, although is not as big as squared number of single words.
+So number of trigrams should be much larger.
+
+## Conclusion and basic assumptions for building algorithm
+
+We can see, that reasonable number of single words in program vocabulary is more than 30000 for news, which have more brief and formal language, and more than 60000 for twitter and blogs. It looks simple to build prediction algorithm for single word, based on words frequency, which would predict word by few letters. For predicting new word we need bigrams and higher dimensional n-grams. Increasing number of n would dramatically increase dimensions of dataset, so we need to find some smart way to store data. Maybe, just small number of stored tri- and bigrams would make our algorithm essentially smarter.   
+  
+Other question is: how to predict n-gram, if there are no such in database. For unfamiliar words and non-words we can just ignore it and make prediction, based on previous n words. If all words are in database, but there is no such combination, we can look at less dimensional n-gram, so for trigram we can look at bigram dataset to find the most common. Other way is to calculate conditional probability for some word, based on appearance of other words in text. If order no matter, than we need just some probability matrix with dimensions Words^2, non Words^n, and we can use all the coefficients for much larger dimension of n-gram, maybe using some "fading" term for previews words would be reasonable.
+
+Before building algorithm, we need to find effective way for cleaning raw text, to throw away numbers, hieroglyphs and non-latin letters. Also, it may be difficult to clean foreign words with latin letters. Throwing away rare words and combinations is quite effective way for initial cleaning.
+
+Other question is - how to evaluate algorithm quality. Straightforward way is to separate raw text data into train and test sets by random sampling, and comparing algorithm results on train and test set. Datasets are quite large and should be representative for the whole word population. Other question is - should we separate news, blogs and twitter for different purposes? Blogs and twitter looks quite similar and we can merge them to single dataset. News have more formal language, without some slang words, so for purposes of average user, algorithm may be less smart.
+
+Punctuation may be useful. If sentence is finished, words before endpoint are out of current n-gram. Words before commas may be less significant to output than latest words, we can use some reduction coefficient for this case.  
+
+Last question: is there any simple and smart way to use words from stop_words list, which are mostly articles, prepositions and pronouns. Mostely, they are parts of bigrams with other words. Tidytext R package stop_words contain 1149 items. We can directly determine freqency  for this combinations, using (vocabulary+stop_words)x(stop_words) matrix, and for other cases use conditional probability, result would be ranged by probability decreasing.  
+
+
+
+
+
+
+
