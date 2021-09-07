@@ -2,12 +2,12 @@ library(shiny)
 library(sbo)
 library(dplyr)
 library(tidyr)
-#library(tidytext)
+library(tidytext)
 library(igraph)
 library(ggraph)
-NgramBase<-readRDS("./trigram15_model.rds")   #loading base of N-grams for sbo algorithm
-p<-sbo_predictor(NgramBase)
-CorrBase<-readRDS("./correlation_model.rds")  #loading base of word correlations
+NgramBase<-readRDS("./trigram10_model.rds")   #loading database of N-grams for sbo algorithm
+p<-sbo_predictor(NgramBase)                   #initializing sbo algorithm
+CorrBase<-readRDS("./correlation_model.rds")  #loading database of word correlations
   
 # Define server logic
 shinyServer(function(input, output) {
@@ -16,16 +16,16 @@ shinyServer(function(input, output) {
     prediction =  reactive( {
         inputText = input$text
         tibble(inputText) %>%
-          unnest_tokens(word, inputText, token='ngrams', n=1) ->WordList
+          unnest_tokens(word, inputText) ->WordList
         
         CorrBase %>%
           filter(item1 %in% WordList$word) %>%
           group_by(item2) %>%
           summarize(correlation=sum(correlation)) %>%
           arrange(desc(correlation)) %>%
-          head(15) -> corr_output        #correlation prediction
+          head(10) -> corr_output        #correlation prediction
         
-        sbo_output=predict(p, inputText) #Sbo prediction
+        sbo_output=head(predict(p, inputText),10) #Sbo prediction
         prediction=cbind(SBO=sbo_output, Correlation=corr_output$item2)
     })    
     
